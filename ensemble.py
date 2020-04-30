@@ -1,5 +1,4 @@
-from flask import Flask
-app = Flask(__name__)
+from flask import Flask, jsonify, request
 
 import os
 import pickle
@@ -7,8 +6,15 @@ import pandas as pd
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.metrics import jaccard_score
-from surprise.dump import load
+# from surprise.dump import load
 from sklearn.externals import joblib
+
+from flask_cors import CORS
+
+# creating a Flask app
+app = Flask(__name__)
+CORS(app) # Let the api acces for frontends.
+
 
 
 def embed_similarity(col_name, user_listing, city_listing):
@@ -40,7 +46,9 @@ def load_data(data_file_path, not_include=[]):
     dataframes = []
     for r, d, f in os.walk(data_file_path):
         for file in f:
+            print(file)
             if file not in not_include:
+                print(file)
                 df = pd.read_csv(data_file_path+'/'+file)
                 dataframes.append(df)
     return dataframes
@@ -201,11 +209,17 @@ def collobrative_filtering(userid,solotrip, business, shortstay, listings, city)
         purpose = purpose + "01"
 
     city = listings[listings['city'] == city]['id']
-
-    loadalgo1 = load('svd')
-    loadalgo2 = load('knnC')
-    loadalgo3 = load('knn')
+    with open('svd', 'rb') as pickle_file:
+        loadalgo1 = pickle.load(pickle_file)
+    with open('knnC', 'rb') as pickle_file:
+        loadalgo1 = pickle.load(pickle_file)
+    with open('knn', 'rb') as pickle_file:
+        loadalgo1 = pickle.load(pickle_file)
+    # loadalgo1 = pickle.load('svd')
+    # loadalgo2 = pickle.load('knnC')
+    # loadalgo3 = pickle.load('knn')
     final = []
+
     for listing in city:
         temp = int(purpose+str(listing))
         predict1 = loadalgo1[1].predict(userid, temp, verbose=True).est
@@ -217,7 +231,7 @@ def collobrative_filtering(userid,solotrip, business, shortstay, listings, city)
     return final
 
 user_data = pd.read_csv('./data/Final_usersData_withratings_600k.csv')
-listings_data = load_data('./data/final_listing')
+listings_data = load_data('./data/final_listings')
 gbrdata = pd.read_csv('./gbrdata.csv').drop(['Unnamed: 0'],axis=1)
 
 @app.route('/ensemble/<userid>/<solotrip>/<business>/<shortstay>/<city>')
@@ -227,24 +241,19 @@ def ensemble(userid, solotrip, business,shortstay,city):
     listings = listings.fillna(0)
 
     content = content_based(int(userid), solotrip, business, shortstay, listings, city, user_data)
-    collobrative = collobrative_filtering(int(userid), solotrip, business, shortstay, listings, city)
+    #collobrative = collobrative_filtering(int(userid), solotrip, business, shortstay, listings, city)
     ml_filter = machine_learning_model(int(userid), solotrip, business, shortstay, listings, city, gbrdata)
 
     dict_content = {k: v for v, k in content}
-    dict_collobrative = {k: v for v, k in collobrative}
+    # dict_collobrative = {k: v for v, k in collobrative}
     dict_ml = {k:v for v, k in ml_filter}
-
+    ans =[]
     final=[]
-    for key in dict_collobrative:
-        final.append(((dict_collobrative[key]+dict_content[key]+dict_ml[key])/3,key))
+    for key in dict_content:
+        final.append(((dict_content[key]+dict_ml[key])/3,key))
 
     final.sort()
-    return str([i[1] for i in final[len(final)-10:]])
-
-
+    ans = [int(i[1]) for i in final[len(final)-10:]]
+    return jsonify({'data':ans})
 if __name__ == '__main__':
    app.run(debug = True)
-
-
-
-
